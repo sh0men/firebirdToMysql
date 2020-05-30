@@ -18,5 +18,5 @@ Just rename the config_sample.ini and fill in the config parameters
 By copying DBNAMEx.options and DBNAMEx.table sections you can export from as many databases as possible until the table names are not identhical, since only one mysql database can be used at the moment.
 
 ###
-TAG:
+TAGs:
 Easier access to Firebird table data since ODBC drivers are sometimes unstable.
