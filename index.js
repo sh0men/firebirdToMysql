@@ -117,8 +117,8 @@ createArray = async (result) => {
             for (let [key, value] of Object.entries(rows)) {
                 if (value===null || value !== value) {
                     insertA.push(value);
-                } else {       
-                    insertA.push(value.toString().trim().replace('„', '').replace('”', '').replace('Ă©', 'é').replace('Ăˇ','á').replace('Ă¶','ö')); 
+                } else {        
+                    insertA.push(value.toString().trim().replace('„', '').replace('”', '').replace('Ă©', 'é').replace('Ăˇ','á').replace('Ă¶','ö').replace('Ă‰','É')); 
                 }
             }
             insertArray.push(insertA);
