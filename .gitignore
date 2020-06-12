@@ -4,5 +4,5 @@ node_modules
 .env* 
 *.local
 config.ini
-index.js.old
+index.js.old.js
 select*.sql
