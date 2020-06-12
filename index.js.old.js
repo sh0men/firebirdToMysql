@@ -3,12 +3,11 @@ var ini = require('ini');
 var util = require('util');
 var mysql = require('mysql');
 const fs = require('fs');
+// const { parse } = require('fast-csv');
 
 const logtimestamp = require('log-timestamp');
 
 var config = ini.parse(fs.readFileSync('./config.ini', 'utf-8'))
-
-// Reads Firebird DB params from config.ini
 
 const paramDB = async (dbname, config) => {
     var options = {};
@@ -25,8 +24,6 @@ const paramDB = async (dbname, config) => {
     return options;
 }
 
-// Read MySQL params from config.ini
-
 const mysqlParam = async () => {
     var mysqlParams = {};
     mysqlParams.host = await config.mysql.host;
@@ -39,8 +36,6 @@ const mysqlParam = async () => {
     mysqlParams.multipleStatements = true;
     return mysqlParams;
 }
-
-// Generate SELECT statement from Firebird, and CREATE TABLE, INSERT and CREATE INDEX for MySQL
 
 queryDB = async(options, tablename) => {
     return new Promise((resolve, reject)=> {
@@ -62,8 +57,7 @@ queryDB = async(options, tablename) => {
         Firebird.attach(options, function(err, db) {
             if (err)
                 throw err; 
-
-            // Query fields of a Table from Firebird including Index information
+            // db.query("select t.rdb$type_name TYPE, rf.rdb$field_name FIELD from RDB$relation_fields rf, rdb$fields f, rdb$types t where rf.rdb$relation_name = '" + tablename +"' and rf.rdb$field_source=f.rdb$field_name and t.rdb$field_name= 'RDB$FIELD_TYPE' and f.rdb$field_type=t.rdb$type and t.rdb$type_name <> 'BLOB'", 
             db.query("select t.rdb$type_name TYPE, rf.rdb$field_name FIELD, f.rdb$field_length LENGTH, st.rdb$type_name SUBTYPE, max(INDEXNAME) INDEXNAME, min(POS) POS  " +
                      "from rdb$fields f, rdb$types t, rdb$types st, " +
                      "RDB$relation_fields rf left join (select se.rdb$field_name SE_FIELD, i.rdb$relation_name I_RELATION, i.rdb$index_name INDEXNAME, se.rdb$field_position POS " +
@@ -83,8 +77,6 @@ queryDB = async(options, tablename) => {
                 insert = 'INSERT INTO '+tablename+' (';
                 result.forEach( function(rows, index) {
 
-                    // Iterate through every fields in a row of Table definition FIELDs
-
                     var size = Object.keys(result).length;
                     for (let [key, value] of Object.entries(rows)) {
                         if (key.trim()==='TYPE') {
@@ -103,9 +95,6 @@ queryDB = async(options, tablename) => {
                                 indexPos=value;
                         }
                     }
-
-                    // Set matching data types for MySQL based on what is set in Firebird
-
                     if (fieldTypeOrigin==='VARYING') {
                         fieldType = 'VARCHAR('+fieldLength+')';
                     } else if (fieldTypeOrigin==='TEXT') {
@@ -129,8 +118,6 @@ queryDB = async(options, tablename) => {
                     } else { 
                         fieldType = fieldTypeOrigin; 
                     }
-
-                    // Evaluates DATABASE.donotmigrate.TABLE entries in config.ini
                     if (options.dontmigrate) {
                         if (options.dontmigrate[tablename]) {
                             for (const [table, value] of Object.entries(options.dontmigrate[tablename])) {
@@ -143,16 +130,14 @@ queryDB = async(options, tablename) => {
 
                     if (!fieldToBeSkipped) {
                         if (isDate) {
-                            // Date conversion in order to match to the target system -- might needs to be adjusted in other regional settings!!!!
                             sql = sql + "CAST(LPAD(EXTRACT(YEAR FROM " + fieldName + " ),4,'0')||'-'||LPAD(EXTRACT(MONTH FROM " + fieldName + " ),2,'0')||'-'||LPAD(EXTRACT(DAY FROM " + fieldName + "),2,'0') as varchar(30)) " + fieldName + " "; 
                         } else if (isBlob) {
                             // sql = sql + "CAST("+ fieldName + " AS VARCHAR(32000) character set octets) " + fieldName + " ";
+                            // sql = `${sql}cast(replace(replace(${fieldName}, '„', '***'), '”', '***') as varchar(1000) character set UNICODE_FSS) ${fieldName} `;
                             sql = `${sql}BLOBTOTEXT(${fieldName}) ${fieldName} `;
                         } else {
                             sql=sql+fieldName; 
                         }
-
-                        // Adds fields to statements
                         insert=insert+fieldName; 
                         create = create + fieldName + ' ' + fieldType + ' NULL';
                         if(index<size-1) {
@@ -169,7 +154,6 @@ queryDB = async(options, tablename) => {
                             indexArray[indexName].splice(indexPos, 0, fieldName);
                         }
                     } else {
-                        // Remove training ', ' from strings if this is the last entry 
                         if(index===size-1) {
                             sql = sql.slice(0, -2);
                             insert = insert.slice(0, -2);
@@ -187,15 +171,11 @@ queryDB = async(options, tablename) => {
                     indexName = '';
                     pos = 0;
                 });
-
-                // Closing statements
                 sql=sql+" FROM " + tablename ;
                 insert=insert+' ) VALUES  ? ';
                 create = create + ');';
 
                 db.detach();
-
-                // Generate resultset as array (Promise has only one result)
                 result = [];
                 result['options']=options;
                 result['sql']=sql;
@@ -209,8 +189,6 @@ queryDB = async(options, tablename) => {
     });
 }
 
-// Generates array from data to be imported
-
 createArray = async (result) => {
     return new Promise((resolve) => {
         insertArray = [];
@@ -221,6 +199,11 @@ createArray = async (result) => {
                     insertA.push(value);
                 } else {             
                     insertA.push(value.toString().trim());
+                    // insertA.push(value.toString().trim().replace('„', '').replace('”', '').replace('Ă©', 'é').replace('Ă©', 'é')
+                    //     .replace('Ăˇ','á').replace('Ă¶','ö').replace('Ă‰','É').replace('Ă‰', 'É').replace('Ă–', 'Ö').replace('Ă–', 'Ö')
+                    //     .replace('Ă•', 'Ö').replace('Ă•', 'Ö').replace('Ă', 'Á').replace('Ă', 'Á').replace('Ă›', 'Ű').replace('Ă›', 'Ű')
+                    //     .replace('–', '-').replace('–', '-').replace('ĂĽ', 'ü').replace('Ă“', 'Ó').replace('Ăł', 'ó').replace('ă“', 'ó').replace('ă“', 'ó')
+                    //     .replace('Ĺ‘', 'ő').replace('Ĺ‘', 'ő').replace('Ăş', 'ú').replace('Ăş', 'ú')); 
                 } 
             }
             insertArray.push(insertA);
@@ -228,8 +211,6 @@ createArray = async (result) => {
         resolve(insertArray);
     });
 }
-
-// Reserve a connection from pool
 
 mysqlGetConnection = (pool) => {
     return new Promise((resolve, reject) => {
@@ -241,8 +222,6 @@ mysqlGetConnection = (pool) => {
         });
     });
 };
-
-// Execute statements in MySQL - always generates a result
 
 mysqlExecute = async (command, pool) => {
     return new Promise((resolve, reject) => {
@@ -261,8 +240,6 @@ mysqlExecute = async (command, pool) => {
         })()           
     });
 }
-
-// Insert data into MySQL
 
 mysqlInsert = async (insert, data, pool) => {
     return new Promise((resolve, reject) => {
@@ -284,7 +261,23 @@ mysqlInsert = async (insert, data, pool) => {
     });
 }
 
-//Runs Firebird statements
+mysqlQuery = async (data, pool) => {
+    return new Promise((resolve, reject) => {
+        (async () => {
+            const connection  = await mysqlGetConnection(pool); 
+            const query = util.promisify(connection.query).bind(connection);
+            (async () => {
+                try {
+                   var result = await query(data);
+                }  catch ( err ) {
+                    reject(err);
+                }
+                resolve(result);
+                connection.release(); 
+            })()   
+        })()     
+    });
+}
 
 fbQuery = async (options, statement) => {
     return new Promise((resolve, reject) => {
@@ -307,9 +300,7 @@ fbQuery = async (options, statement) => {
     });
 }
 
-// Exports data from Firebird databases and imports into MySQL
-
-exportImport = async (options, sql, tablename, insert, create, indexArray, pool, rows_count) => {
+insertDBWithoutBlob = async (options, sql, tablename, insert, create, indexArray, pool, rows_count) => {
 
     var tablesize = 0;
     var inserted = 0;
@@ -319,17 +310,14 @@ exportImport = async (options, sql, tablename, insert, create, indexArray, pool,
         tablesize=Object.values(rows)[0];
     });
     console.log(`Export STARTED for table: ${tablename} Count of rows: ${tablesize}`);
-    // Drop and recreate table
     let exec = await mysqlExecute('drop table if exists '+ tablename+';', pool);
     exec = await mysqlExecute(create+';', pool);
 
     for (let i = 1; i<tablesize; i+=rows_count) {
-        // Select Rows from Firebird
         sqlseq='SELECT FIRST '+rows_count+' SKIP '+(i-1)+' '+sql;
 
         result = await fbQuery(options, sqlseq);
 
-        // Insert Rows into MySQL
         const dataArray = await createArray(result);
         if (dataArray) {
             const res = await mysqlInsert(insert, dataArray, pool);
@@ -338,8 +326,6 @@ exportImport = async (options, sql, tablename, insert, create, indexArray, pool,
         console.log(`Rows inserted into ${tablename} : ${inserted}/${tablesize}`);
     }
     console.log(`Export FINISHED for table: ${tablename} Count of rows: ${tablesize}`);
-
-    // Create INDEX 
     if (indexArray) {
         let statement = await createIndex(tablename, indexArray, pool);
         exec = await mysqlExecute(statement, pool);
@@ -351,7 +337,6 @@ exportImport = async (options, sql, tablename, insert, create, indexArray, pool,
     }
 }
 
-// Generate CREATE INDEX statements into one string
 createIndex = async (tablename, indexArray, pool) => {
     return new Promise((resolve) => {
         var indexName = '';
@@ -369,6 +354,8 @@ createIndex = async (tablename, indexArray, pool) => {
                         statement = statement + "); \r\n";
                     }
             })    
+            // let exec = await mysqlExecute(statement, pool);
+        // console.log(`Index ${indexName} for table ${tablename} created`);
         })
         resolve(statement);  
     })
@@ -381,16 +368,14 @@ const iterate = async function () {
 
     const rows_count = +(await config.mysql.rows_count);
 
-    // Iterate through all Firebird databases defined in config.ini
     for (const [key, dbname] of Object.entries(config.database.db)) {
         var options = await paramDB(dbname, config);
         var tables = options.tables;
 
-        // Iterate through all tables of a Firebird database defined in config.ini
         for (const [table, value] of Object.entries(tables)) {
-            // Generate statements and call export-import data
+            // var dontmigrate = options.dontmigrate.table;
             let arr = await this.queryDB(options, table);
-            await this.exportImport(arr.options, arr.sql, arr.tablename, arr.insert, arr.create, arr.indexArray, pool, rows_count);
+            await this.insertDBWithoutBlob(arr.options, arr.sql, arr.tablename, arr.insert, arr.create, arr.indexArray, pool, rows_count);
         }
     }
     pool.end(function(err) {
