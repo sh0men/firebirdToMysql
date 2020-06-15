@@ -1,8 +1,0 @@
-
-node_modules 
-*.env 
-.env* 
-*.local
-config.ini
-index.js.old.js
-select*.sql
