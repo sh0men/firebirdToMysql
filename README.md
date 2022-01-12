@@ -1,5 +1,5 @@
 # firebirdToMysql
-Automated Table exports from multiple FireBird databases into a MySQL/MariaDB database
+Automated Table exporter from multiple FireBird databases into a MySQL/MariaDB database. Tables are always newly exported, and precious data in the target database in MySQL/MariaDB will be removed.
 
 ###
 Firebird 3.0 Support
